@@ -1,0 +1,142 @@
+/**
+ * Tuya Switch driver
+ *
+ * Author: Josh Lasdin
+ * Last updated: 2019-12-25
+ *
+ * Based on the Wemo Switch driver by Jason Cheatham and the original Wemo
+ * Switch driver by Juan Risso at SmartThings, 2015-10-11.
+ *
+ * Copyright 2015 SmartThings
+ *
+ * Licensed under the Apache License, Version 2.0 (the 'License'); you may not
+ * use this file except in compliance with the License. You may obtain a copy
+ * of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
+
+metadata {
+    definition(
+        name: 'Tuya Switch',
+        namespace: 'joshlasdin',
+        author: 'Josh Lasdin'
+    ) {
+        capability 'Actuator'
+        capability 'Switch'
+        capability 'Polling'
+        capability 'Refresh'
+        capability 'Sensor'
+
+        command 'unsubscribe'
+    }
+
+    preferences {
+        input "apiUrl", "text", title: "API Url", required: true
+        input "deviceId", "text", title: "Device ID", required: true
+        input "localKey", "text", title: "Local Key", required: true
+        input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
+    }
+}
+
+def getDriverVersion() {
+    2
+}
+
+def on() {
+    if (logEnable) log.debug("Turning switch on: ${settings.deviceId}")
+    try {
+        httpGet(apiUrl('/on')) { resp ->
+            data = resp.getData();
+            if (data.success) {
+                sendEvent(
+                    name: "switch",
+                    value: data.state,
+                    isStateChange: true
+                )
+
+                if (logEnable) log.debug("Successfully turned switch on: ${settings.deviceId}")
+            }
+        }
+    } catch (Exception e) {
+        if (logEnable) log.warn("Failed to turn switch on: ${e.message}")
+    }
+}
+
+def off() {
+    if (logEnable) log.debug("Turning switch off: ${settings.deviceId}")
+    try {
+        httpGet(apiUrl('/off')) { resp ->
+            data = resp.getData();
+            if (data.success) {
+                sendEvent(
+                    name: "switch",
+                    value: data.state,
+                    isStateChange: true
+                )
+
+                if (logEnable) log.debug("Successfully turned switch off: ${settings.deviceId}")
+            }
+        }
+    } catch (Exception e) {
+        if (logEnable) log.warn("Failed to turn switch off: ${e.message}")
+    }
+}
+
+def parse(description) {
+    if (logEnable) log.debug(description);
+}
+
+def poll() {
+    // Schedule a call to flag the device offline if no new message is received
+    if (device.currentValue('switch') != 'offline') {
+        runIn(10, setOffline)
+    }
+
+    refresh();
+    runIn(10, poll);
+}
+
+def unsubscribe() {
+    unschedule('poll');
+}
+
+def refresh() {
+    if (logEnable) log.debug("Checking switch state: ${settings.deviceId}")
+    try {
+        httpGet(apiUrl('/state')) { resp ->
+            data = resp.getData();
+            if (data.success) {
+                sendEvent(
+                    name: "switch",
+                    value: data.state,
+                    isStateChange: true
+                )
+
+                if (logEnable) log.debug("Successfully checked switch state: ${settings.deviceId}")
+            }
+        }
+    } catch (Exception e) {
+        if (logEnable) log.warn("Failed to check switch state: ${e.message}")
+    }
+
+    unschedule('setOffline')
+}
+
+def setOffline() {
+    sendEvent(
+        name: 'switch',
+        value: 'offline',
+        descriptionText: 'The device is offline'
+    )
+}
+
+private apiUrl(uri) {
+    return "${settings.apiUrl + uri}?deviceId=${settings.deviceId}&localKey=${settings.localKey}"
+}
